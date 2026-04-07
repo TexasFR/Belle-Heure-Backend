@@ -13,7 +13,7 @@ app.use('/api/payments/webhook', require('./routes/payments').webhookHandler || 
 // ── Middleware ─────────────────────────────────────────────
 app.use(cors({
   origin: [
-    "https://html-starter-cyan-eight.vercel.app/"
+    "https://html-starter-cyan-eight.vercel.app"
   ],
   credentials: true
 }));
