@@ -74,4 +74,45 @@ router.delete('/:id', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+ /* ══════════════════════════════════════════════════════════
+   GET /api/schedule/categories  ← NOUVEAU
+   Lire les noms de catégories galerie
+══════════════════════════════════════════════════════════ */
+router.get('/categories', async (req, res) => {
+  try {
+    const { data } = await db
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'category_names')
+      .maybeSingle();
+ 
+    const defaults = {
+      visage: 'Visage', mains: 'Mains & Pieds', corps: 'Corps',
+      maquillage: 'Maquillage', ambiance: 'Ambiance', general: 'Général',
+    };
+ 
+    res.json(data?.value ? JSON.parse(data.value) : defaults);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+ 
+/* ══════════════════════════════════════════════════════════
+   PUT /api/schedule/categories  ← NOUVEAU
+   Sauvegarder les noms de catégories galerie
+   Body : { visage: '...', mains: '...', ... }
+══════════════════════════════════════════════════════════ */
+router.put('/categories', requireAdmin, async (req, res) => {
+  try {
+    const allowed = ['visage', 'mains', 'corps', 'maquillage', 'ambiance', 'general'];
+    const cats = {};
+    for (const k of allowed) {
+      if (req.body[k]) cats[k] = String(req.body[k]).slice(0, 60);
+    }
+    await db.from('app_settings').upsert(
+      { key: 'category_names', value: JSON.stringify(cats) },
+      { onConflict: 'key' }
+    );
+    res.json({ success: true, categories: cats });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 module.exports = router;

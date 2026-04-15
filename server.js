@@ -13,8 +13,7 @@ app.use('/api/payments/webhook', require('./routes/payments').webhookHandler || 
 // ── Middleware ─────────────────────────────────────────────
 app.use(cors({
   origin: [
-    "http://localhost:3000",
-    "https://ton-site.vercel.app"
+     "https://html-starter-cyan-eight.vercel.app"
   ],
   credentials: true
 }));

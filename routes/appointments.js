@@ -23,19 +23,49 @@ router.get('/slots', async (req, res) => {
     const { date } = req.query;
     if (!date) return res.status(400).json({ error: 'Date requise' });
     const dow = new Date(date + 'T00:00:00').getDay();
-    const [dayR, blkR, cfgR, takenR] = await Promise.all([
-      db.from('schedule').select('*').eq('day_of_week', dow).single(),
+
+    const [blkR, cfgR, takenR, weekPlanR] = await Promise.all([
       db.from('blocked_dates').select('date').eq('date', date).maybeSingle(),
       db.from('slot_config').select('slot_duration').limit(1).single(),
       db.from('appointments').select('appointment_slot').eq('appointment_date', date).neq('status', 'cancelled'),
+      db.from('week_plan').select('enabled').limit(1).maybeSingle(),
     ]);
+
+    // Blocked date : prioritaire dans tous les modes
     if (blkR.data) return res.json({ available: false, reason: 'blocked', slots: [] });
-    if (!dayR.data?.is_open) return res.json({ available: false, reason: 'closed', slots: [] });
+
     const dur = cfgR.data?.slot_duration || 30;
-    const open  = dayR.data.open_time.slice(0, 5);
-    const close = dayR.data.close_time.slice(0, 5);
     const taken = (takenR.data || []).map(r => r.appointment_slot.slice(0, 5));
-    res.json({ available: true, slots: genSlots(open, close, dur).map(t => ({ time: t, taken: taken.includes(t) })) });
+
+    if (weekPlanR.data?.enabled) {
+      // ✅ Mode week plan : on cherche la date dans week_plan_dates
+      const { data: wpDay } = await db
+        .from('week_plan_dates')
+        .select('open_time, close_time')
+        .eq('date', date)
+        .maybeSingle();
+
+      if (!wpDay) return res.json({ available: false, reason: 'closed', slots: [] });
+
+      const open  = wpDay.open_time.slice(0, 5);
+      const close = wpDay.close_time.slice(0, 5);
+      return res.json({ available: true, slots: genSlots(open, close, dur).map(t => ({ time: t, taken: taken.includes(t) })) });
+
+    } else {
+      // ✅ Mode normal : schedule habituel
+      const { data: dayR } = await db
+        .from('schedule')
+        .select('*')
+        .eq('day_of_week', dow)
+        .single();
+
+      if (!dayR?.is_open) return res.json({ available: false, reason: 'closed', slots: [] });
+
+      const open  = dayR.open_time.slice(0, 5);
+      const close = dayR.close_time.slice(0, 5);
+      return res.json({ available: true, slots: genSlots(open, close, dur).map(t => ({ time: t, taken: taken.includes(t) })) });
+    }
+
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
