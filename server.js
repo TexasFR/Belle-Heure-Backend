@@ -11,7 +11,12 @@ const PORT = process.env.PORT || 3001;
 app.use('/api/payments/webhook', require('./routes/payments').webhookHandler || ((req,res,next)=>next()));
 
 // ── Middleware ─────────────────────────────────────────────
-app.use(cors({ origin: process.env.NODE_ENV === 'production' ? false : '*', credentials: true }));
+app.use(cors({
+  origin: [
+    "https://html-starter-cyan-eight.vercel.app"
+  ],
+  credentials: true
+}));
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true }));
 
