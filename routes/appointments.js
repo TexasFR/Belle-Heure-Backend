@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const { db }  = require('../supabase/client');
 const { requireAdmin, optAuth, requireAuth } = require('../middleware/auth');
+const { sendConfirmation, sendAnnulation } = require('./mailer');
 
 function makeId() {
   return 'BH-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2,5).toUpperCase();
@@ -17,6 +18,33 @@ function genSlots(open, close, dur) {
   return sl;
 }
 
+// Helper : récupère les settings du salon (adresse + horaire) pour les mails
+async function getSalonSettings() {
+  try {
+   const {data} = await db
+  .from('settings')
+  .select('value')
+  .eq('key', 'salon_address')
+  .single();
+  console.log(data);
+    return data ;
+    
+  } catch { return {}; }
+}
+
+// Helper : construit le payload mail depuis un appointment
+function buildMailData(appt, settings) {
+  return {
+    clientName : `${appt.first_name} ${appt.last_name}`,
+    service    : appt.service_name,
+    date       : appt.appointment_date,
+    heure      : appt.appointment_slot?.slice(0, 5),
+    praticienne: appt.staff_name || 'Notre équipe',
+    adresse    : settings?.value || ''
+  };
+  console.log(settings?.value);
+}
+
 // GET /api/appointments/slots?date=YYYY-MM-DD
 router.get('/slots', async (req, res) => {
   try {
@@ -31,14 +59,12 @@ router.get('/slots', async (req, res) => {
       db.from('week_plan').select('enabled').limit(1).maybeSingle(),
     ]);
 
-    // Blocked date : prioritaire dans tous les modes
     if (blkR.data) return res.json({ available: false, reason: 'blocked', slots: [] });
 
     const dur = cfgR.data?.slot_duration || 30;
     const taken = (takenR.data || []).map(r => r.appointment_slot.slice(0, 5));
 
     if (weekPlanR.data?.enabled) {
-      // ✅ Mode week plan : on cherche la date dans week_plan_dates
       const { data: wpDay } = await db
         .from('week_plan_dates')
         .select('open_time, close_time')
@@ -52,7 +78,6 @@ router.get('/slots', async (req, res) => {
       return res.json({ available: true, slots: genSlots(open, close, dur).map(t => ({ time: t, taken: taken.includes(t) })) });
 
     } else {
-      // ✅ Mode normal : schedule habituel
       const { data: dayR } = await db
         .from('schedule')
         .select('*')
@@ -114,6 +139,15 @@ router.post('/', optAuth, async (req, res) => {
       status: pm === 'on_site' ? 'confirmed' : 'pending',
     }).select().single();
     if (error) throw error;
+
+    // Mail de confirmation uniquement si paiement sur place (statut confirmed immédiat)
+    // Pour Stripe, le mail part dans confirm-payment après validation du paiement
+    if (pm === 'on_site') {
+      const settings = await getSalonSettings();
+      console.log(settings);
+      sendConfirmation(email, buildMailData(data, settings)).catch(console.error);
+    }
+
     res.status(201).json(data);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -125,6 +159,14 @@ router.put('/:id/status', requireAdmin, async (req, res) => {
     if (!['pending','confirmed','completed','cancelled'].includes(status)) return res.status(400).json({ error: 'Statut invalide' });
     const { data, error } = await db.from('appointments').update({ status }).eq('id', req.params.id).select().single();
     if (error) throw error;
+
+    if (status === 'confirmed') {
+      const settings = await getSalonSettings();
+      sendConfirmation(data.email, buildMailData(data, settings)).catch(console.error);
+    } else if (status === 'cancelled') {
+      sendAnnulation(data.email, buildMailData(data)).catch(console.error);
+    }
+
     res.json(data);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -135,6 +177,10 @@ router.put('/:id/confirm-payment', async (req, res) => {
     const { stripe_payment_id } = req.body;
     const { data, error } = await db.from('appointments').update({ status: 'confirmed', stripe_payment_id }).eq('id', req.params.id).select().single();
     if (error) throw error;
+
+    const settings = await getSalonSettings();
+    sendConfirmation(data.email, buildMailData(data, settings)).catch(console.error);
+
     res.json(data);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -142,13 +188,16 @@ router.put('/:id/confirm-payment', async (req, res) => {
 // DELETE /api/appointments/:id — annuler
 router.delete('/:id', optAuth, async (req, res) => {
   try {
-    const { data: appt } = await db.from('appointments').select('user_id').eq('id', req.params.id).single();
+    const { data: appt } = await db.from('appointments').select('*').eq('id', req.params.id).single();
     if (!appt) return res.status(404).json({ error: 'Rendez-vous introuvable' });
     const isAdmin = req.isAdminSecret || req.user?.profile?.role === 'admin';
     const isOwner = req.user?.id && req.user.id === appt.user_id;
     if (!isAdmin && !isOwner) return res.status(403).json({ error: 'Non autorisé' });
     const { data, error } = await db.from('appointments').update({ status: 'cancelled' }).eq('id', req.params.id).select().single();
     if (error) throw error;
+
+    sendAnnulation(data.email, buildMailData(data)).catch(console.error);
+
     res.json(data);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

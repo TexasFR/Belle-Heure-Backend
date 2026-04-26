@@ -53,12 +53,18 @@ router.delete('/:id', requireAdmin, async (req, res) => {
 
 router.get('/settings', async (req, res) => {
   try {
-    const { data, error } = await db.from('settings').select('*');
+    const { data, error } = await db
+      .from('settings')
+      .select('key, value') // seulement les colonnes utiles, pas updated_at
+      .in('key', ['salon_address', 'salon_phone', 'salon_email', 'salon_name', 'salon_horaire','payment_methods_enabled']); // whitelist
+
     if (error) throw error;
-    const obj = {};
-    (data || []).forEach(r => { obj[r.key] = r.value; });
-    res.json(obj);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+
+    const settings = Object.fromEntries((data || []).map(r => [r.key, r.value]));
+    res.json(settings);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 router.put('/settings', requireAdmin, async (req, res) => {

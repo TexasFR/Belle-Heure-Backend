@@ -13,6 +13,7 @@ router.get('/', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+
 router.post('/', requireAdmin, async (req, res) => {
   try {
     const { name, icon, description, price, duration, active, sort_order } = req.body;

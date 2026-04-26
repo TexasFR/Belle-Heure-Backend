@@ -11,13 +11,7 @@ const PORT = process.env.PORT || 3001;
 app.use('/api/payments/webhook', require('./routes/payments').webhookHandler || ((req,res,next)=>next()));
 
 // ── Middleware ─────────────────────────────────────────────
-app.use(cors({
-  origin: [
-  
-   "https://html-starter-cyan-eight.vercel.app"
-  ],
-  credentials: true
-}));
+app.use(cors({ origin: process.env.NODE_ENV === 'production' ? false : '*', credentials: true }));
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -31,6 +25,8 @@ app.use('/api/appointments', require('./routes/appointments'));
 app.use('/api/gallery',      require('./routes/gallery'));
 app.use('/api/payments',     require('./routes/payments'));
 app.use('/api/users',        require('./routes/users'));
+app.use('/api/mailer',       require('./routes/mailer'));
+
 
 // ── Health check ───────────────────────────────────────────
 app.get('/api/health', (req, res) => {
