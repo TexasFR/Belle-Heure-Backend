@@ -3,7 +3,7 @@ const { Resend } = require('resend');
 const { requireAdmin } = require('../middleware/auth');
 
 const resend = new Resend(process.env.RESEND_API_KEY);
-const FROM = 'Belle Heure <onboarding@resend.dev>';
+const FROM = 'Belle Heure <contact@trntech.fr>';
 
 // ── Templates ──────────────────────────────────────────────
 
