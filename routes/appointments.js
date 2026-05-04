@@ -6,7 +6,7 @@ const { sendConfirmation, sendAnnulation } = require('./mailer');
 function makeId() {
   return 'BH-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2,5).toUpperCase();
 }
-function genSlots(open, close, dur) {
+function genSlots(open, close, dur, open2, close2) {
   const sl = [];
   let [sh, sm] = open.split(':').map(Number);
   const [eh, em] = close.split(':').map(Number);
@@ -14,6 +14,15 @@ function genSlots(open, close, dur) {
   while (cur + dur <= end) {
     sl.push(`${String(Math.floor(cur/60)).padStart(2,'0')}:${String(cur%60).padStart(2,'0')}`);
     cur += dur;
+  }
+  if (open2 && close2) {
+    let [sh2, sm2] = open2.split(':').map(Number);
+    const [eh2, em2] = close2.split(':').map(Number);
+    let cur2 = sh2 * 60 + sm2, end2 = eh2 * 60 + em2;
+    while (cur2 + dur <= end2) {
+      sl.push(`${String(Math.floor(cur2/60)).padStart(2,'0')}:${String(cur2%60).padStart(2,'0')}`);
+      cur2 += dur;
+    }
   }
   return sl;
 }
@@ -26,7 +35,6 @@ async function getSalonSettings() {
   .select('value')
   .eq('key', 'salon_address')
   .single();
-  console.log(data);
     return data ;
     
   } catch { return {}; }
@@ -42,7 +50,6 @@ function buildMailData(appt, settings) {
     praticienne: appt.staff_name || 'Notre équipe',
     adresse    : settings?.value || ''
   };
-  console.log(settings?.value);
 }
 
 // GET /api/appointments/slots?date=YYYY-MM-DD
@@ -67,15 +74,17 @@ router.get('/slots', async (req, res) => {
     if (weekPlanR.data?.enabled) {
       const { data: wpDay } = await db
         .from('week_plan_dates')
-        .select('open_time, close_time')
+        .select('open_time, close_time, open_time2, close_time2')
         .eq('date', date)
         .maybeSingle();
 
       if (!wpDay) return res.json({ available: false, reason: 'closed', slots: [] });
 
-      const open  = wpDay.open_time.slice(0, 5);
-      const close = wpDay.close_time.slice(0, 5);
-      return res.json({ available: true, slots: genSlots(open, close, dur).map(t => ({ time: t, taken: taken.includes(t) })) });
+      const open   = wpDay.open_time.slice(0, 5);
+      const close  = wpDay.close_time.slice(0, 5);
+      const open2  = wpDay.open_time2?.slice(0, 5) || null;
+      const close2 = wpDay.close_time2?.slice(0, 5) || null;
+      return res.json({ available: true, slots: genSlots(open, close, dur, open2, close2).map(t => ({ time: t, taken: taken.includes(t) })) });
 
     } else {
       const { data: dayR } = await db
@@ -86,9 +95,11 @@ router.get('/slots', async (req, res) => {
 
       if (!dayR?.is_open) return res.json({ available: false, reason: 'closed', slots: [] });
 
-      const open  = dayR.open_time.slice(0, 5);
-      const close = dayR.close_time.slice(0, 5);
-      return res.json({ available: true, slots: genSlots(open, close, dur).map(t => ({ time: t, taken: taken.includes(t) })) });
+      const open   = dayR.open_time.slice(0, 5);
+      const close  = dayR.close_time.slice(0, 5);
+      const open2  = dayR.open_time2?.slice(0, 5) || null;
+      const close2 = dayR.close_time2?.slice(0, 5) || null;
+      return res.json({ available: true, slots: genSlots(open, close, dur, open2, close2).map(t => ({ time: t, taken: taken.includes(t) })) });
     }
 
   } catch (e) { res.status(500).json({ error: e.message }); }

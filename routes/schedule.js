@@ -50,6 +50,8 @@ router.put('/', requireAdmin, async (req, res) => {
           is_open:     day.is_open,
           open_time:   day.open_time,
           close_time:  day.close_time,
+          open_time2:   day.open_time2,
+          close_time2:  day.close_time2,
         }, { onConflict: 'day_of_week' });
       }
     }
@@ -165,6 +167,33 @@ router.delete('/blocked/cleanup', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+router.delete('/weekplan/cleanup_weekplan', requireAdmin, async (req, res) => {
+  try {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const d = String(today.getDate()).padStart(2, '0');
+    const todayStr = `${y}-${m}-${d}`;
+
+    // Récupère les dates passées
+    const { data: toDelete, error: selectError } = await db
+      .from('week_plan_dates')
+      .select('date')
+      .lt('date', todayStr);
+
+    if (selectError) throw new Error(selectError.message);
+    if (!toDelete || toDelete.length === 0)
+      return res.json({ success: true, deleted: 0 });
+
+    // Supprime une par une comme ton endpoint qui fonctionne
+    for (const row of toDelete) {
+      await db.from('week_plan_dates').delete().eq('date', row.date);
+    }
+
+    res.json({ success: true, deleted: toDelete.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 /* ══════════════════════════════════════════════════════════
    GET /api/schedule/week-plan
    Retourne l'état global + toutes les dates ouvertes
@@ -180,7 +209,7 @@ router.get('/week-plan',/* requireAdmin,*/ async (req, res) => {
 
     const { data: dates, error: e2 } = await db
       .from('week_plan_dates')
-      .select('date, open_time, close_time')
+      .select('date, open_time, close_time, open_time2, close_time2')
       .order('date');
     if (e2) throw e2;
 
@@ -219,13 +248,13 @@ router.put('/week-plan', requireAdmin, async (req, res) => {
 ══════════════════════════════════════════════════════════ */
 router.post('/week-plan/dates', requireAdmin, async (req, res) => {
   try {
-    const { date, open_time = '09:00', close_time = '19:00' } = req.body;
+    const { date, open_time = '09:00', close_time = '19:00', open_time2 ='', close_time2='' } = req.body;
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date))
       return res.status(400).json({ error: 'Format date invalide (YYYY-MM-DD)' });
 
     const { error } = await db
       .from('week_plan_dates')
-      .upsert({ date, open_time, close_time }, { onConflict: 'date' });
+      .upsert({ date, open_time, close_time, open_time2, close_time2 }, { onConflict: 'date' });
     if (error) throw error;
 
     res.json({ success: true, date });
